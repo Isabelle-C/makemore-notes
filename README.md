@@ -1,81 +1,116 @@
+This repo contains my notes from Andrej Karpathy's lectures.
 
-# makemore
+# Sequence of Lectures
 
-makemore takes one text file as input, where each line is assumed to be one training thing, and generates more things like it. Under the hood, it is an autoregressive character-level language model, with a wide choice of models from bigrams all the way to a Transformer (exactly as seen in GPT). For example, we can feed it a database of names, and makemore will generate cool baby name ideas that all sound name-like, but are not already existing names. Or if we feed it a database of company names then we can generate new ideas for a name of a company. Or we can just feed it valid scrabble words and generate english-like babble.
+0. 
 
-This is not meant to be too heavyweight library with a billion switches and knobs. It is one hackable file, and is mostly intended for educational purposes. [PyTorch](https://pytorch.org) is the only requirement.
-
-Current implementation follows a few key papers:
-
-- Bigram (one character predicts the next one with a lookup table of counts)
-- MLP, following [Bengio et al. 2003](https://www.jmlr.org/papers/volume3/bengio03a/bengio03a.pdf)
-- CNN, following [DeepMind WaveNet 2016](https://arxiv.org/abs/1609.03499) (in progress...)
-- RNN, following [Mikolov et al. 2010](https://www.fit.vutbr.cz/research/groups/speech/publi/2010/mikolov_interspeech2010_IS100722.pdf)
-- LSTM, following [Graves et al. 2014](https://arxiv.org/abs/1308.0850)
-- GRU, following [Kyunghyun Cho et al. 2014](https://arxiv.org/abs/1409.1259)
-- Transformer, following [Vaswani et al. 2017](https://arxiv.org/abs/1706.03762)
-
-### Usage
-
-The included `names.txt` dataset, as an example, has the most common 32K names takes from [ssa.gov](https://www.ssa.gov/oact/babynames/) for the year 2018. It looks like:
+```mermaid
+---
+title: Learning map
+---
+flowchart TB
+    id1[function backpropagation + activation] --> id2[neuron backprop] --> id3["NN backprop + loss function (update gradient every step)"]
 
 ```
-emma
-olivia
-ava
-isabella
-sophia
-charlotte
-...
+
+## Challenges and Solutions
+1. Weight initialization 
+Weight initialization details is more important if your output layer has the (saturating) tanh non-linearity and an MSE error on top of it.
+2. Overfitting Solutions
+- Data augmentation: a fairly simple and very standard concept
+- Dropout
+- Large-scale optimization
+    - Residual connections
+    - Layer/batch normalization
+
+## 1. bigram_model: using a simple bigram model to generate text
+
+see notebook [here](/notebooks/bigram_model.ipynb)
+
+- loss function: negative log likelihood
+- not a good model, the names produced does not resemble "names"
+
+## 2. a very simple NN: using a neural network to generate text
+see notebook [here](/notebooks/NN.ipynb)
+- We see similar results compared to first because NN is very simple
+
+## 3. MLP
+see notebook [here](/notebooks/MLP.ipynb) and [here](/notebooks/MLP_full_data.ipynb)
+
+- lit: A Neural Probabilistic Language Model
+  - 17000 vocab associated with a point in vector space (30 features eg)
+  - components:
+    - lookup table: C 17000 x 30
+    - index of incoming word
+    - input layer: 90 neurons total (30 neurons for 3 words)
+    - hidden layer: arbitrary number of neurons (100 neurons)
+      - hyperparameter (this term means can be as large as you want)
+      - fully connected with input layer
+    - tanh activation function
+    - output layer (expensive layer: also fully connected with hidden layer)
+    - softmax (exponentiated, normalized)
+    - pluck out probability of word and compare to actual word
+    - backpropagation optimization
+
+# Part 3 video notes
+see [here](/notebooks/build_makemore_batchnorm.ipynb)
+
+## The initial loss is too high
+
+we would expect uniform distribution of next-letter probability, i.e. log of 1/27
+
+- the shape of the loss looks like a hockey stick
+- the initial iterations are squashing down the logits
+
+```python
+W2 = torch.randn((n_hidden, vocab_size),          generator=g) * 0.01
+b2 = torch.randn(vocab_size,                      generator=g) * 0
 ```
 
-Let's point the script at it:
+- Note W2 cannot be all 0!
+- the multiplier = the value of the sd of W2
 
-```bash
-$ python makemore.py -i names.txt -o names
+## Tanh
+
+- it is a squashing function
+- if the value is 1 or -1 in backpropagation, the gradient is 0 so backpropagation stops: "dead neuron"
+  - neuron output is all 1 or -1
+- i.e. one column completely white
+- same issue with sigmoid and relu
+  - alternative: leaky relu or elu
+- can happen at initialization or optimization (with high learning rate)
+
+`solution`
+
+```python
+W1 = torch.randn((n_embd * block_size, n_hidden), generator=g) * (5/3)/((n_embd * block_size)**0.5)
 ```
 
-Training progress and logs and model will all be saved to the working directory `names`. The default model is a super tiny 200K param transformer; Many more training configurations are available - see the argparse and read the code. Training does not require any special hardware, it runs on my Macbook Air and will run on anything else, but if you have a GPU then training will fly faster. As training progresses the script will print some samples throughout. However, if you'd like to sample manually, you can use the `--sample-only` flag, e.g. in a separate terminal do:
+- deeper the network the more significant the problem
+- the multiplication above is trying to preserve the guassian distribution of the input (i.e. keeping a small standard deviation)
+  - the factor is square root of (5/3)/ (n_embd \* block_size)
+  - Kaiming initialization
 
-```bash
-$ python makemore.py -i names.txt -o names --sample-only
+## Batch normalization
+- based on [paper](https://arxiv.org/abs/1502.03167)
+- normalize the hidden layer
+```python
+hpreact = embcat @ W1 #+ b1 # hidden layer pre-activation
 ```
 
-This will load the best model so far and print more samples on demand. Here are some unique baby names that get eventually generated from current default settings (test logprob of ~1.92, though much lower logprobs are achievable with some hyperparameter tuning):
-
+1. Calculate the mean and standard deviation of the hidden layer
+```python
+  bnmeani = hpreact.mean(0, keepdim=True)
+  bnstdi = hpreact.std(0, keepdim=True)
 ```
-dontell
-khylum
-camatena
-aeriline
-najlah
-sherrith
-ryel
-irmi
-taislee
-mortaz
-akarli
-maxfelynn
-biolett
-zendy
-laisa
-halliliana
-goralynn
-brodynn
-romima
-chiyomin
-loghlyn
-melichae
-mahmed
-irot
-helicha
-besdy
-ebokun
-lucianno
+- mean: taking mean of everything in the batch (average of any neuron activation)
+- std: standard deviation of the batch
+- remember we only want this at initialization, not during training
+2. Scale and shift! (offset with gain and bias)
+- note `bngain` and `bnbias` below
+```python
+  hpreact = bngain * (hpreact - bnmeani) / bnstdi + bnbias
+  with torch.no_grad():
+    bnmean_running = 0.999 * bnmean_running + 0.001 * bnmeani
+    bnstd_running = 0.999 * bnstd_running + 0.001 * bnstdi
 ```
-
-Have fun!
-
-### License
-
-MIT
