@@ -1,8 +1,6 @@
 This repo contains my notes from Andrej Karpathy's lectures.
 
-# Sequence of Lectures
-
-0. 
+# 0. Concepts to start with
 
 ```mermaid
 ---
@@ -13,15 +11,7 @@ flowchart TB
 
 ```
 
-## Challenges and Solutions
-1. Weight initialization 
-Weight initialization details is more important if your output layer has the (saturating) tanh non-linearity and an MSE error on top of it.
-2. Overfitting Solutions
-- Data augmentation: a fairly simple and very standard concept
-- Dropout
-- Large-scale optimization
-    - Residual connections
-    - Layer/batch normalization
+# Lectures
 
 ## 1. bigram_model: using a simple bigram model to generate text
 
@@ -76,8 +66,13 @@ b2 = torch.randn(vocab_size,                      generator=g) * 0
 - if the value is 1 or -1 in backpropagation, the gradient is 0 so backpropagation stops: "dead neuron"
   - neuron output is all 1 or -1
 - i.e. one column completely white
+![white_column](/figs/white_column.png)
+![histogram](/figs/histogram.png)
 - same issue with sigmoid and relu
   - alternative: leaky relu or elu
+
+![activation_functions](/figs/af.png)
+
 - can happen at initialization or optimization (with high learning rate)
 
 `solution`
@@ -89,7 +84,10 @@ W1 = torch.randn((n_embd * block_size, n_hidden), generator=g) * (5/3)/((n_embd 
 - deeper the network the more significant the problem
 - the multiplication above is trying to preserve the guassian distribution of the input (i.e. keeping a small standard deviation)
   - the factor is square root of (5/3)/ (n_embd \* block_size)
+![init](/figs/initialization.png)
   - Kaiming initialization
+
+![kaiming](/figs/kaiming.png)
 
 ## Batch normalization
 - based on [paper](https://arxiv.org/abs/1502.03167)
