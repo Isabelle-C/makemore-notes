@@ -65,9 +65,11 @@ b2 = torch.randn(vocab_size,                      generator=g) * 0
 - it is a squashing function
 - if the value is 1 or -1 in backpropagation, the gradient is 0 so backpropagation stops: "dead neuron"
   - neuron output is all 1 or -1
+![histogram](/figs/histogram.png)
+
 - i.e. one column completely white
 ![white_column](/figs/white_column.png)
-![histogram](/figs/histogram.png)
+
 - same issue with sigmoid and relu
   - alternative: leaky relu or elu
 
