@@ -51,7 +51,7 @@ we would expect uniform distribution of next-letter probability, i.e. log of 1/2
 
 - the shape of the loss looks like a hockey stick
 - the initial iterations are squashing down the logits
-
+- taking away that drastic drop in loss by making the weights and biases closer to 0 so less likely of vanishing gradient
 ```python
 W2 = torch.randn((n_hidden, vocab_size),          generator=g) * 0.01
 b2 = torch.randn(vocab_size,                      generator=g) * 0
@@ -100,17 +100,91 @@ hpreact = embcat @ W1 #+ b1 # hidden layer pre-activation
 
 1. Calculate the mean and standard deviation of the hidden layer
 ```python
-  bnmeani = hpreact.mean(0, keepdim=True)
-  bnstdi = hpreact.std(0, keepdim=True)
+bnmeani = hpreact.mean(0, keepdim=True)
+bnstdi = hpreact.std(0, keepdim=True)
 ```
 - mean: taking mean of everything in the batch (average of any neuron activation)
 - std: standard deviation of the batch
 - remember we only want this at initialization, not during training
+
 2. Scale and shift! (offset with gain and bias)
 - note `bngain` and `bnbias` below
+    - initialize
+```python
+# BatchNorm parameters
+bngain = torch.ones((1, n_hidden))
+bnbias = torch.zeros((1, n_hidden))
+bnmean_running = torch.zeros((1, n_hidden))
+bnstd_running = torch.ones((1, n_hidden))
+```
+    - scaling
 ```python
   hpreact = bngain * (hpreact - bnmeani) / bnstdi + bnbias
   with torch.no_grad():
     bnmean_running = 0.999 * bnmean_running + 0.001 * bnmeani
     bnstd_running = 0.999 * bnstd_running + 0.001 * bnstdi
+```
+The batches kind of create a "jittering" effect because which samples in batch affect h. But in a way this introduces entropy and help prevent model overfitting.
+
+Final training code below:
+
+```python
+# same optimization as last time
+max_steps = 200000
+batch_size = 32
+lossi = []
+
+for i in range(max_steps):
+  
+  # minibatch construct
+  ix = torch.randint(0, Xtr.shape[0], (batch_size,), generator=g)
+  Xb, Yb = Xtr[ix], Ytr[ix] # batch X,Y
+  
+  # forward pass
+  emb = C[Xb] # embed the characters into vectors
+  embcat = emb.view(emb.shape[0], -1) # concatenate the vectors
+  # Linear layer
+  hpreact = embcat @ W1 #+ b1 # hidden layer pre-activation
+  # BatchNorm layer
+  # -------------------------------------------------------------
+  bnmeani = hpreact.mean(0, keepdim=True)
+  bnstdi = hpreact.std(0, keepdim=True)
+  hpreact = bngain * (hpreact - bnmeani) / bnstdi + bnbias
+  with torch.no_grad():
+    bnmean_running = 0.999 * bnmean_running + 0.001 * bnmeani
+    bnstd_running = 0.999 * bnstd_running + 0.001 * bnstdi
+  # -------------------------------------------------------------
+  # Non-linearity
+  h = torch.tanh(hpreact) # hidden layer
+  logits = h @ W2 + b2 # output layer
+  loss = F.cross_entropy(logits, Yb) # loss function
+  
+  # backward pass
+  for p in parameters:
+    p.grad = None
+  loss.backward()
+  
+  # update
+  lr = 0.1 if i < 100000 else 0.01 # step learning rate decay
+  for p in parameters:
+    p.data += -lr * p.grad
+
+  # track stats
+  if i % 10000 == 0: # print every once in a while
+    print(f'{i:7d}/{max_steps:7d}: {loss.item():.4f}')
+  lossi.append(loss.log10().item())
+```
+
+The `bnmean_running` and `bnstd_running` are supposed to be estimate for `bnmean` and `bnstd` which could be caliberated after training but nobody wants to do that.
+```
+# calibrate the batch norm at the end of training
+
+with torch.no_grad():
+  # pass the training set through
+  emb = C[Xtr]
+  embcat = emb.view(emb.shape[0], -1)
+  hpreact = embcat @ W1 # + b1
+  # measure the mean/std over the entire training set
+  bnmean = hpreact.mean(0, keepdim=True)
+  bnstd = hpreact.std(0, keepdim=True)
 ```
